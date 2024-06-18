@@ -73,7 +73,11 @@ func (rc *RequestCounter) getNextExpiration() time.Duration {
 	if len(rc.requestList) == 0 {
 		return rc.exp
 	}
-	return time.Until(rc.requestList[0])
+	nextExp := time.Until(rc.requestList[0])
+	if nextExp < 0 {
+		return 1
+	}
+	return nextExp
 }
 
 // LoadRequests loads requests from a slice of time.Time. It only loads requests that are not expired.

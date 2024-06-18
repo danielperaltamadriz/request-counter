@@ -4,6 +4,9 @@
 ## Description
 This project implements a simple HTTP server that tracks and returns the number of requests received within a configurable time window.
 
+## Note
+The project took me around 5-6 hours to complete, including tests.
+
 
 ## Dependencies
 

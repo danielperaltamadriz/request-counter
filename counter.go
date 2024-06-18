@@ -48,17 +48,21 @@ func (rc *RequestCounter) CountRequests() int {
 
 // RemoveExpired removes expired requests from the request list. It runs until the context is done.
 func (rc *RequestCounter) RemoveExpired(ctx context.Context) {
+	ticker := time.NewTicker(rc.getNextExpiration())
+
 	for {
 		select {
 		case <-ctx.Done():
+			ticker.Stop()
 			log.Println("context is done")
 			return
-		case <-time.After(rc.getNextExpiration()):
+		case <-ticker.C:
 			rc.mu.Lock()
 			if len(rc.requestList) > 0 && time.Now().After(rc.requestList[0]) {
 				rc.requestList = rc.requestList[1:]
 			}
 			rc.mu.Unlock()
+			ticker.Reset(rc.getNextExpiration())
 		}
 	}
 }

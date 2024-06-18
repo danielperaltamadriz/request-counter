@@ -30,10 +30,11 @@ func TestAddToCounter(t *testing.T) {
 
 func TestRemoveExpired(t *testing.T) {
 	var (
-		expireFirst = time.Now().Add(time.Millisecond * 100)
-		rc          = NewRequestCounter(time.Second, expireFirst)
-		ctx, cancel = context.WithCancel(context.Background())
-		wg          sync.WaitGroup
+		expireFirst  = time.Now().Add(time.Millisecond * 10)
+		expireSecond = time.Now().Add(time.Millisecond * 10)
+		rc           = NewRequestCounter(time.Second, expireFirst, expireSecond)
+		ctx, cancel  = context.WithCancel(context.Background())
+		wg           sync.WaitGroup
 	)
 
 	wg.Add(1)
@@ -41,7 +42,7 @@ func TestRemoveExpired(t *testing.T) {
 		defer wg.Done()
 		rc.RemoveExpired(ctx)
 	}()
-	if rc.CountRequests() != 1 {
+	if rc.CountRequests() != 2 {
 		t.Errorf("expected %d requests, got %d", 1, rc.CountRequests())
 	}
 

@@ -16,62 +16,61 @@ type serverResponse struct {
 }
 
 func TestIntegration(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	rc := NewRequestCounter(10 * time.Millisecond)
-	var wg sync.WaitGroup
-	wg.Add(1)
+	var (
+		ctx, cancel = context.WithCancel(context.Background())
+		ttl         = 500 * time.Millisecond
+		cap         = 50
+		removeWG    sync.WaitGroup
+		reqWG       sync.WaitGroup
+		n           = 100
+		rc          = NewRequestCounter(ttl, cap)
+		processTime = time.Millisecond * 5
+		ts          = httptest.NewServer(NewAPI(processTime, rc))
+	)
+	defer ts.Close()
+
+	// Remove expired requests
+	removeWG.Add(1)
 	go func() {
-		defer wg.Done()
+		defer removeWG.Done()
 		rc.RemoveExpired(ctx)
 	}()
 
-	ts := httptest.NewServer(NewAPI(rc))
-	defer ts.Close()
+	// Send n requests
+	for i := 0; i < n; i++ {
+		reqWG.Add(1)
+		go func() {
+			defer reqWG.Done()
+			resp, err := http.Get(ts.URL)
+			if err != nil || resp == nil {
+				t.Error("failed to send GET request")
+				return
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Error("failed to read response body")
+				return
+			}
+			if len(body) == 0 {
+				t.Error("response body is empty")
+				return
+			}
 
-	requestTime := time.Now().Add(time.Millisecond * 20)
-	resp, err := http.Get(ts.URL)
-	if err != nil {
-		t.Error("failed to send GET request")
-	}
-	if resp != nil {
-		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			t.Error("failed to read response body")
-		}
-		if len(body) > 0 {
 			var respBody serverResponse
 			err = json.Unmarshal(body, &respBody)
 			if err != nil {
 				t.Error("failed to unmarshal response body")
+				return
 			}
-			if respBody.Count != 1 {
-				t.Errorf("expected 1 request, got %d", respBody.Count)
+			// assert that the number of requests is less than or equal to cap
+			if respBody.Count > cap {
+				t.Errorf("expected less than %d requests, got %d", i+1, respBody.Count)
 			}
-		}
+		}()
 	}
-	<-time.After(time.Until(requestTime))
-	resp, err = http.Get(ts.URL)
-	if err != nil {
-		t.Error("failed to send GET request")
-	}
-	if resp != nil {
-		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			t.Error("failed to read response body")
-		}
-		if len(body) > 0 {
-			var respBody serverResponse
-			err = json.Unmarshal(body, &respBody)
-			if err != nil {
-				t.Error("failed to unmarshal response body")
-			}
-			if respBody.Count != 1 {
-				t.Errorf("expected 1 requests, got %d", respBody.Count)
-			}
-		}
-	}
+
+	reqWG.Wait()
 	cancel()
-	wg.Wait()
+	removeWG.Wait()
 }

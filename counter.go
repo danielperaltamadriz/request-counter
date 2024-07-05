@@ -13,15 +13,17 @@ type RequestCounter struct {
 	requestList []time.Time
 	mu          *sync.Mutex
 	exp         time.Duration
+	semaphore   chan struct{}
 }
 
 // NewRequestCounter creates a new RequestCounter
 // Optionally it can receive a list of requests to load
-func NewRequestCounter(exp time.Duration, preLoadedRequests ...time.Time) *RequestCounter {
+func NewRequestCounter(exp time.Duration, cap int, preLoadedRequests ...time.Time) *RequestCounter {
 	return &RequestCounter{
 		requestList: loadRequests(preLoadedRequests),
 		exp:         exp,
 		mu:          &sync.Mutex{},
+		semaphore:   make(chan struct{}, cap),
 	}
 }
 
@@ -34,6 +36,7 @@ func (rc *RequestCounter) GetRequests() []time.Time {
 
 // AddRequest adds a request to the request list.
 func (rc *RequestCounter) AddRequest() {
+	rc.semaphore <- struct{}{}
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 	rc.requestList = append(rc.requestList, time.Now().Add(rc.exp))
@@ -60,6 +63,10 @@ func (rc *RequestCounter) RemoveExpired(ctx context.Context) {
 			rc.mu.Lock()
 			if len(rc.requestList) > 0 && time.Now().After(rc.requestList[0]) {
 				rc.requestList = rc.requestList[1:]
+				select {
+				case <-rc.semaphore:
+				default:
+				}
 			}
 			rc.mu.Unlock()
 			ticker.Reset(rc.getNextExpiration())
